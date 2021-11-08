@@ -1,42 +1,116 @@
-import cv2 as cv
+import cv2
+import imutils
 import numpy as np
-from matplotlib import pyplot as plt
-
-
-def motionDetection():
-    cap = cv.VideoCapture('rtsp://altaplaza:62741797@10.0.0.117:554')
-    ret, frame1 = cap.read()
-    ret, frame2 = cap.read()
-
-    while cap.isOpened():
-        diff = cv.absdiff(frame1, frame2)
-        diff_gray = cv.cvtColor(diff, cv.COLOR_BGR2GRAY)
-        blur = cv.GaussianBlur(diff_gray, (5, 5), 0)
-        _, thresh = cv.threshold(blur, 20, 255, cv.THRESH_BINARY)
-        dilated = cv.dilate(thresh, None, iterations=3)
-        contours, _ = cv.findContours(
-            dilated, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-
-        for contour in contours:
-            (x, y, w, h) = cv.boundingRect(contour)
-            if cv.contourArea(contour) < 900:
-                continue
-            cv.rectangle(frame1, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            cv.putText(frame1, "Status: {}".format('Movement'), (10, 20), cv.FONT_HERSHEY_SIMPLEX,
-                       1, (255, 0, 0), 3)
-
-        # cv.drawContours(frame1, contours, -1, (0, 255, 0), 2)
-
-        cv.imshow("Video", frame1)
-        frame1 = frame2
-        ret, frame2 = cap.read()
-
-        if cv.waitKey(50) == 27:
+import argparse
+#frame
+def detect(frame):
+    bounding_box_cordinates, weights =  HOGCV.detectMultiScale(frame, winStride = (4, 4), padding = (8, 8), scale = 0.5)
+    
+    person = 1
+    for x,y,w,h in bounding_box_cordinates:
+        cv2.rectangle(frame, (x,y), (x+w,y+h), (0,255,0), 2)
+        cv2.putText(frame, f'person {person}', (x,y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1)
+        person += 1
+    
+    cv2.putText(frame, 'Status : Detecting ', (40,40), cv2.FONT_HERSHEY_DUPLEX, 0.8, (255,0,0), 2)
+    cv2.putText(frame, f'Total Persons : {person-1}', (40,70), cv2.FONT_HERSHEY_DUPLEX, 0.8, (255,0,0), 2)
+    cv2.imshow('output', frame)
+ 
+    return frame
+ 
+def detectByPathVideo(path, writer):
+ 
+    video = cv2.VideoCapture(path)
+    check, frame = video.read()
+    if check == False:
+        print('Video Not Found. Please Enter a Valid Path (Full path of Video Should be Provided).')
+        return
+ 
+    print('Detecting people...')
+    while video.isOpened():
+        #check is True if reading was successful
+        check, frame =  video.read()
+ 
+        if check:
+            frame = imutils.resize(frame , width=min(800,frame.shape[1]))
+            frame = detect(frame)
+            
+            if writer is not None:
+                writer.write(frame)
+            
+            key = cv2.waitKey(1)
+            if key== ord('q'):
+                break
+        else:
             break
-
-    cap.release()
-    cv.destroyAllWindows()
-
-
+    video.release()
+    cv2.destroyAllWindows()
+ 
+def detectByCamera(writer):
+    video = cv2.VideoCapture(0)
+    print('Detecting people...')
+ 
+    while True:
+        check, frame = video.read()
+ 
+        frame = detect(frame)
+        if writer is not None:
+            writer.write(frame)
+ 
+        key = cv2.waitKey(1)
+        if key == ord('q'):
+                break
+ 
+    video.release()
+    cv2.destroyAllWindows()
+ 
+def detectByPathImage(path, output_path):
+    image = cv2.imread(path)
+ 
+    image = imutils.resize(image, width = min(800, image.shape[1]))
+ 
+    result_image = detect(image)
+ 
+    if output_path is not None:
+        cv2.imwrite(output_path, result_image)
+ 
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+ 
+ 
+def humanDetector(args):
+    image_path = args["image"]
+    video_path = args['video']
+    if str(args["camera"]) == 'true' : camera = True
+    else : camera = False
+ 
+    writer = None
+    if args['output'] is not None and image_path is None:
+        writer = cv2.VideoWriter(args['output'],cv2.VideoWriter_fourcc(*'MJPG'), 10, (600,600))
+ 
+    if camera:
+        print('[INFO] Opening Web Cam.')
+        detectByCamera(writer)
+    elif video_path is not None:
+        print('[INFO] Opening Video from path.')
+        detectByPathVideo(video_path, writer)
+    elif image_path is not None:
+        print('[INFO] Opening Image from path.')
+        detectByPathImage(image_path, args['output'])
+ 
+def argsParser():
+    arg_parse = argparse.ArgumentParser()
+    arg_parse.add_argument("-v", "--video", default=None, help="path to Video File ")#command
+    arg_parse.add_argument("-i", "--image", default=None, help="path to Image File ")#command
+    arg_parse.add_argument("-c", "--camera", default=False, help="Set true if you want to use the camera.")#command
+    arg_parse.add_argument("-o", "--output", type=str, help="path to optional output video file")#command
+    args = vars(arg_parse.parse_args())
+ 
+    return args
+ 
 if __name__ == "__main__":
-    motionDetection()
+    HOGCV = cv2.HOGDescriptor()
+    HOGCV.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+ 
+    args = argsParser()
+    humanDetector(args)
